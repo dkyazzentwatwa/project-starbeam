@@ -12,7 +12,7 @@ components have been manufactured and attached. You can source the necessary par
 various suppliers, but the provided links offer decent price points. It is crucial to obtain the
 exact specified parts if using this PCB, especially for the display and USB-C module.
 This is what you will get after PCB order:
- ![Project Starbeam PCBA](img/starbeam2.jpg) 
+ ![Project Starbeam PCBA](img/starbeam2.JPG) 
 
 ### PCB-A Notes:
 **This is a 4-layer PCB, there are notes for the required specifications in /hardwawre**
@@ -52,7 +52,7 @@ https://pcbway.com/g/87Pi52
     - Attach the antennas that correspond to your desired setup.
     - Good luck...
  ![Project Starbeam](img/starbeam3.jpg) 
- ![Project Starbeam](img/starbeam4.jpg) 
+ ![Project Starbeam](img/starbeam4.JPG) 
   ![Project Starbeam](img/starbeam5.jpeg) 
    ![Project Starbeam](img/starbeam6.jpg) 
 
