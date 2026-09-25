@@ -31,7 +31,7 @@ This is what you will get after PCB order:
 ### PCB-A Notes:
 **This is a 4-layer PCB, there are notes for the required specifications in /hardware**
 **This is an advanced project, so please do not waste your time & money if you do not understand PCB ordering, & if you need any assistance you can book a call & i'll be more than happy to walk you through the whole build process:
-[Book a 30 Minute Consultation](https://book.stripe.com/cN2eWneWf77F4gM5kq)**
+https://linktr.ee/littlehakr
 
 Link to PCB to place order:
 https://pcbway.com/g/87Pi52
