@@ -38,7 +38,7 @@ https://pcbway.com/g/87Pi52
 
 **Required Components After PCB Assembly:**
 - **ESP32-Wroom-32D**:
-    - https://amzn.to/3YR1noR
+    - [https://amzn.to/3YR1noR](https://link.amazon/B02Y9k12B)
 - **SSD1306 128x64 0.96-inch Display**:
     - https://amzn.to/4lONdP9
 - **NRF24 Radios (x5) for 2.4GHz**:
