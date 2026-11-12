@@ -1,7 +1,7 @@
  // Project Starbeam V2 - Main Firmware
 // Full implementation with all V1 features
 // 100% backward compatible hardware
-
+// use SmartRC-CC1101-Driver-Lib 2.5.7
 #include <Arduino.h>
 #include <Wire.h>
 #include <SPI.h>
@@ -708,6 +708,29 @@ void executeSelectedMenuItem() {
             }
             break;
 
+        case WIFI_STA_MODE: {
+            currentState = STATE_MENU;
+            
+            // Toggle the setting
+            bool newState = !StarbeamWebServer::isStaMode();
+            StarbeamWebServer::setStaMode(newState);
+            
+            // Restart webserver to apply changes
+            if (StarbeamWebServer::isRunning()) {
+                StarbeamWebServer::stop();
+                delay(500);
+                StarbeamWebServer::start();
+            }
+            
+            if (newState) {
+                Display::displayInfo("WiFi Mode", "STA: ON", "Connects to Router", "AP is Fallback");
+            } else {
+                Display::displayInfo("WiFi Mode", "STA: OFF", "Creates Own AP", "192.168.4.1");
+            }
+            nonBlockingDelay(2500);
+            break;
+        } // <--- THIS CLOSING BRACE IS THE FIX
+            
         case DRONE_JAM:
             currentState = STATE_DRONE_JAM;
             Serial.println("DRONE JAM selected");
@@ -891,9 +914,17 @@ void executeSelectedMenuItem() {
 
         case TEST_HSPI:
             currentState = STATE_TEST_NRF_5;
-            Serial.println("TEST_HSPI selected");
-            Display::displayInfo("HSPI TEST", "TURN ON LEFT SWITCH", "Starting....", "");
-            NRF24Radio::initHSPI();
+            Serial.println("TEST_HSPI (CC1101 bus test) selected");
+            Display::displayInfo("HSPI TEST", "Testing CC1101s", "Starting....", "");
+            CC1101Radio::init();
+            CC1101Radio::init2();
+            if (CC1101Radio::checkConnection() && CC1101Radio::checkConnection2()) {
+                Display::displayInfo("HSPI TEST", "CC1 & CC2 OK!", "", "");
+                Serial.println("HSPI bus: CC1101 modules connected OK");
+            } else {
+                Display::displayInfo("HSPI TEST", "CC1101 FAILED!", "Check wiring", "");
+                Serial.println("HSPI bus: CC1101 connection FAILED");
+            }
             nonBlockingDelay(2000);
             break;
 
@@ -1141,14 +1172,15 @@ void setup() {
     Display::init();
 
     // Disable unnecessary wireless interfaces (like V1)
-    esp_bt_controller_deinit();
-    esp_wifi_stop();
-    esp_wifi_deinit();
+    // IMPORTANT: DO NOT deinit WiFi here, or the webserver will fail!
+    esp_bt_controller_deinit(); 
+    // esp_wifi_stop();   // <-- MUST BE COMMENTED OUT
+    // esp_wifi_deinit(); // <-- MUST BE COMMENTED OUT
 
     // Initialize input
     Input::init();
 
-    // Initialize web server (doesn't start AP yet)
+    // Initialize web server
     StarbeamWebServer::init();
 
     // Animated boot intro
@@ -1161,21 +1193,17 @@ void setup() {
     // Display CC1101 connection status
     if (CC1101Radio::checkConnection()) {
         Serial.println("CC1101 #1: Connection OK");
-        Display::displayInfo("CC1101 #1", "Connection OK", "", "");
     } else {
         Serial.println("CC1101 #1: Connection ERROR");
-        Display::displayInfo("CC1101 #1", "ERROR!", "Check wiring", "");
     }
-    delay(1500);
+    delay(1000);
 
     if (CC1101Radio::checkConnection2()) {
         Serial.println("CC1101 #2: Connection OK");
-        Display::displayInfo("CC1101 #2", "Connection OK", "", "");
     } else {
         Serial.println("CC1101 #2: Connection ERROR");
-        Display::displayInfo("CC1101 #2", "ERROR!", "Check wiring", "");
     }
-    delay(1500);
+    delay(1000);
 
     // Initialize recording module
     Recording::init();
@@ -1183,6 +1211,22 @@ void setup() {
     // Apply persisted CC1101 frequency
     CC1101Radio::setMhz(Settings::freq());
     Serial.printf("[freq] applied persisted %.2f MHz\n", Settings::freq());
+
+    // --- START WEBSERVER AUTOMATICALLY ---
+    // This will attempt to connect to your configured Wi-Fi networks.
+    // If it fails, it will automatically create the "Starbeam" AP.
+    StarbeamWebServer::start();
+    
+    // Wait a moment for connection & IP assignment
+    delay(1000); 
+
+    // Get the active IP (either from router or fallback AP)
+    String currentIP = StarbeamWebServer::getIP();
+    
+    // Show the IP on the OLED screen for 4 seconds
+    Display::displayInfo("WiFi ACTIVE", "IP Address:", currentIP, "WebServer is ON");
+    Serial.printf("[WebServer] Active IP: %s\n", currentIP.c_str());
+    delay(4000); 
 
     // Spawn serial bridge task on Core 0. This lets serial commands and STOP
     // be processed even while UI handlers are inside their inner loops.
@@ -1207,7 +1251,7 @@ void loop() {
     // STEP 1: Serial input is handled by serialBridgeTask on Core 0.
     //         Here we only check for parsed commands.
     // ========================================================================
-
+    StarbeamWebServer::handleClient();
     // ========================================================================
     // STEP 2: Check for serial command and execute it
     // ========================================================================
@@ -1259,6 +1303,9 @@ void loop() {
                 currentState = STATE_MENU;
                 Display::drawMenu(selectedMenuItem, firstVisibleMenuItem);
                 Input::setButtonPressedState(false);
+                while (digitalRead(BUTTON_SELECT) == LOW) {
+                    delay(10);
+                }                
             }
             break;
 
