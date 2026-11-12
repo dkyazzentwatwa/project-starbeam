@@ -92,7 +92,7 @@ static void stopReceiving() {
 static uint8_t detectSignalStrength() {
     uint8_t strength = 0;
 
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 3; i++) {
         startReceiving();
         delayMicroseconds(200);
 
@@ -254,14 +254,19 @@ static void showStartupScreen() {
 void analyzerSetup() {
     Serial.println("NRF24 WiFi Single Channel Analyzer");
 
-    esp_bt_controller_deinit();
-    esp_wifi_stop();
-    esp_wifi_deinit();
+    // esp_bt_controller_deinit();
+    // esp_wifi_stop();
+    // esp_wifi_deinit();
 
     pinMode(ANALYZER_CE, OUTPUT);
     pinMode(ANALYZER_CSN, OUTPUT);
-    pinMode(BUTTON_UP, INPUT_PULLUP);
-    pinMode(BUTTON_DOWN, INPUT_PULLUP);
+
+    // FIXED: Changed INPUT_PULLUP to INPUT to prevent GPIO errors on pins 34/39
+    pinMode(BUTTON_UP, INPUT);
+    pinMode(BUTTON_DOWN, INPUT);
+    //old:
+    //pinMode(BUTTON_UP, INPUT_PULLUP);
+    //pinMode(BUTTON_DOWN, INPUT_PULLUP);
 
     digitalWrite(ANALYZER_CE, LOW);
     digitalWrite(ANALYZER_CSN, HIGH);

@@ -43,6 +43,9 @@ public:
 
     static const Data& raw() { return data; }
 
+    static bool wifiStaEnabled();
+    static void setWifiStaEnabled(bool enabled);
+    
 private:
     static Data data;
     static bool loaded;

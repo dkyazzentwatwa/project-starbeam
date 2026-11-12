@@ -6,6 +6,18 @@
 Settings::Data Settings::data;
 bool Settings::loaded = false;
 
+// Add a variable to track the state
+static bool _wifiStaEnabled = DEFAULT_WIFI_STA_ENABLED;
+
+bool Settings::wifiStaEnabled() {
+    return _wifiStaEnabled;
+}
+
+void Settings::setWifiStaEnabled(bool enabled) {
+    _wifiStaEnabled = enabled;
+    // TODO: Save to EEPROM here (using EEPROM.put) if you want it to persist across reboots
+}
+
 static void setDefaults(Settings::Data& d) {
     d.magic = Settings::MAGIC;
     d.version = Settings::VERSION;

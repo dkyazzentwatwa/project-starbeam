@@ -12,6 +12,7 @@ bool StarbeamWebServer::running = false;
 IPAddress StarbeamWebServer::apIP(192, 168, 4, 1);
 bool StarbeamWebServer::wifiScanEnabled = false;
 bool StarbeamWebServer::bleScanEnabled = false;
+bool StarbeamWebServer::staModeEnabled = true; // Default: Try to connect to WiFi
 
 void StarbeamWebServer::init() {
     server = nullptr;
@@ -19,23 +20,69 @@ void StarbeamWebServer::init() {
     running = false;
 }
 
+void StarbeamWebServer::setStaMode(bool enabled) {
+    staModeEnabled = enabled;
+}
+
+bool StarbeamWebServer::isStaMode() {
+    return staModeEnabled;
+}
+
 void StarbeamWebServer::start() {
     if (running) return;
 
     Serial.println("Starting web server...");
+    bool connectedToSTA = false;
 
-    // CRITICAL: Use AP_STA mode to allow WiFi scanning while AP is active
-    WiFi.mode(WIFI_AP_STA);
+    if (staModeEnabled) {
+        Serial.println("[WebServer] STA Mode enabled. Searching for configured networks...");
+        WiFi.mode(WIFI_STA); // Turn off AP initially
 
-    // Configure and start Access Point
-    WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
-    WiFi.softAP(AP_SSID, AP_PASSWORD);
+        for (int i = 0; i < MAX_STA_NETWORKS; i++) {
+            if (String(STA_SSIDS[i]).length() == 0) continue;
 
-    delay(500);  // Let AP stabilize
+            Serial.printf("[WebServer] Trying to connect to: %s\n", STA_SSIDS[i]);
+            WiFi.begin(STA_SSIDS[i], STA_PASSWORDS[i]);
 
-    // Start DNS server (resolves all queries to our IP for easy access)
-    dnsServer = new DNSServer();
-    dnsServer->start(53, "*", apIP);
+            unsigned long startAttempt = millis();
+            // Wait up to 7 seconds per network
+            while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 7000) {
+                delay(500);
+                Serial.print(".");
+                yield();
+            }
+
+            if (WiFi.status() == WL_CONNECTED) {
+                Serial.println("\n[WebServer] Connected to STA!");
+                connectedToSTA = true;
+                break;
+            } else {
+                Serial.println("\n[WebServer] Failed to connect.");
+                WiFi.disconnect();
+            }
+        }
+    }
+
+    // Failsafe: If STA failed or is disabled, turn on the AP
+    if (!connectedToSTA) {
+        Serial.println("[WebServer] Falling back to Access Point mode.");
+        // CRITICAL: Use AP_STA mode to allow WiFi scanning while AP is active
+        WiFi.mode(WIFI_AP_STA);
+        
+        WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
+        WiFi.softAP(AP_SSID, AP_PASSWORD);
+        delay(500);  // Let AP stabilize
+
+        // Start DNS server (captive portal)
+        dnsServer = new DNSServer();
+        dnsServer->start(53, "*", apIP);
+    } else {
+        // We are connected to a router. We use AP_STA anyway to allow scanning.
+        // But we don't start the AP or DNS server to save power and avoid interference.
+        WiFi.mode(WIFI_AP_STA); 
+        Serial.print("[WebServer] STA IP: ");
+        Serial.println(WiFi.localIP());
+    }
 
     // Create and configure HTTP server
     server = new WebServer(WEB_SERVER_PORT);
@@ -66,13 +113,14 @@ void StarbeamWebServer::start() {
     server->begin();
     running = true;
 
-    Serial.printf("Web server + captive portal started at http://%s\n", apIP.toString().c_str());
+    String currentIP = connectedToSTA ? WiFi.localIP().toString() : apIP.toString();
+    Serial.printf("Web server started at http://%s\n", currentIP.c_str());
 
-    // Show IP on OLED for 2 seconds
+    // Show IP on OLED
     Display::displayInfo("WEB SERVER",
-                         "SSID: " + String(AP_SSID),
-                         "IP: " + apIP.toString(),
-                         "Captive Portal: ON");
+                         "Mode: " + String(connectedToSTA ? "WiFi STA" : "Access Point"),
+                         "IP: " + currentIP,
+                         "Captive Portal: " + String(connectedToSTA ? "OFF" : "ON"));
     delay(2000);
 }
 
@@ -93,7 +141,10 @@ void StarbeamWebServer::stop() {
         server = nullptr;
     }
 
+    // Disconnect everything
+    WiFi.disconnect(true); 
     WiFi.softAPdisconnect(true);
+    WiFi.mode(WIFI_OFF);
     running = false;
 }
 
@@ -113,6 +164,10 @@ bool StarbeamWebServer::isRunning() {
 }
 
 String StarbeamWebServer::getIP() {
+    // Return STA IP if connected, otherwise AP IP
+    if (WiFi.status() == WL_CONNECTED) {
+        return WiFi.localIP().toString();
+    }
     return apIP.toString();
 }
 
@@ -301,25 +356,19 @@ void StarbeamWebServer::handleRoot() {
 void StarbeamWebServer::handleWiFi() {
     unsigned long startTime = millis();
 
-    // Use chunked transfer to avoid memory issues
     server->setContentLength(CONTENT_LENGTH_UNKNOWN);
     server->send(200, "text/html", "");
 
-    // Send header
     server->sendContent(generateHTMLHeader("WiFi Scanner"));
     yield();
-
-    // Send navigation
     server->sendContent(generateNavigation());
     yield();
 
-    // Send refresh button and count
     String header = "<button onclick='location.reload()'>&#128472; Refresh</button>";
     header += "<h2>WiFi Networks (" + String(WiFiScanner::getNetworkCount()) + ")</h2>";
     server->sendContent(header);
     yield();
 
-    // Send table in chunks
     int count = WiFiScanner::getNetworkCount();
     String chunk = "<table border='1' cellpadding='5'>";
     chunk += "<tr><th>#</th><th>SSID</th><th>BSSID</th><th>RSSI</th><th>Ch</th><th>Security</th></tr>";
@@ -344,44 +393,35 @@ void StarbeamWebServer::handleWiFi() {
                 row += "</tr>";
 
                 server->sendContent(row);
-                if (i % 3 == 0) yield();  // Yield every 3 rows
+                if (i % 3 == 0) yield();
             }
         }
     }
 
     server->sendContent("</table>");
     yield();
-
-    // Send footer
     server->sendContent(generateHTMLFooter());
-    server->sendContent("");  // End chunked transfer
+    server->sendContent("");
 
-    unsigned long elapsed = millis() - startTime;
-    Serial.printf("[WebServer] WiFi page sent in %lu ms\n", elapsed);
+    Serial.printf("[WebServer] WiFi page sent in %lu ms\n", millis() - startTime);
 }
 
 void StarbeamWebServer::handleBLE() {
     unsigned long startTime = millis();
 
-    // Use chunked transfer to avoid memory issues
     server->setContentLength(CONTENT_LENGTH_UNKNOWN);
     server->send(200, "text/html", "");
 
-    // Send header
     server->sendContent(generateHTMLHeader("BLE Scanner"));
     yield();
-
-    // Send navigation
     server->sendContent(generateNavigation());
     yield();
 
-    // Send refresh button and count
     String header = "<button onclick='location.reload()'>&#128472; Refresh</button>";
     header += "<h2>BLE Devices (" + String(BLEScanner::getDeviceCount()) + ")</h2>";
     server->sendContent(header);
     yield();
 
-    // Send table in chunks
     int count = BLEScanner::getDeviceCount();
     String chunk = "<table border='1' cellpadding='5'>";
     chunk += "<tr><th>#</th><th>Name</th><th>MAC Address</th><th>RSSI</th><th>Type</th><th>Connectable</th></tr>";
@@ -406,20 +446,17 @@ void StarbeamWebServer::handleBLE() {
                 row += "</tr>";
 
                 server->sendContent(row);
-                if (i % 3 == 0) yield();  // Yield every 3 rows
+                if (i % 3 == 0) yield();
             }
         }
     }
 
     server->sendContent("</table>");
     yield();
-
-    // Send footer
     server->sendContent(generateHTMLFooter());
-    server->sendContent("");  // End chunked transfer
+    server->sendContent("");
 
-    unsigned long elapsed = millis() - startTime;
-    Serial.printf("[WebServer] BLE page sent in %lu ms\n", elapsed);
+    Serial.printf("[WebServer] BLE page sent in %lu ms\n", millis() - startTime);
 }
 
 void StarbeamWebServer::handleWiFiJSON() {
@@ -471,7 +508,6 @@ void StarbeamWebServer::handleBLEJSON() {
 }
 
 void StarbeamWebServer::handleNotFound() {
-    // Redirect to root for easier navigation
     server->sendHeader("Location", "/", true);
     server->send(302, "text/plain", "");
 }
@@ -508,21 +544,17 @@ void StarbeamWebServer::handleStatus() {
 // Security Testing Handlers
 
 void StarbeamWebServer::handleSecurityRoot() {
-    // Use chunked transfer to avoid memory issues
     server->setContentLength(CONTENT_LENGTH_UNKNOWN);
     server->send(200, "text/html", "");
 
-    // Send header and navigation
     server->sendContent(generateHTMLHeader("Security Testing"));
     yield();
     server->sendContent(generateNavigation());
     yield();
 
-    // Refresh button
     server->sendContent("<button onclick='location.reload()'>&#128472; Refresh</button>");
     yield();
 
-    // CRITICAL LEGAL WARNING
     String warning = "<div style='background:#ff0000;color:#ffffff;padding:20px;margin:20px 0;border:2px solid #ffffff;'>";
     warning += "<h2 style='color:#ffffff;margin:0;'>&#9888;&#65039; LEGAL WARNING &#9888;&#65039;</h2>";
     warning += "<p>These tools are for AUTHORIZED security testing ONLY.</p>";
@@ -531,7 +563,6 @@ void StarbeamWebServer::handleSecurityRoot() {
     server->sendContent(warning);
     yield();
 
-    // Attack status
     if (WiFiAttack::isAttacking()) {
         String status = "<div style='background:#ff6600;padding:15px;margin:10px 0;'>";
         status += "<h3>&#128680; ATTACK IN PROGRESS</h3>";
@@ -556,11 +587,9 @@ void StarbeamWebServer::handleSecurityRoot() {
         yield();
     }
 
-    // Network table header
     server->sendContent("<h2>Available Networks</h2>");
     yield();
 
-    // Send WiFi table inline (chunked)
     int netCount = WiFiScanner::getNetworkCount();
     String tableStart = "<table border='1' cellpadding='5'>";
     tableStart += "<tr><th>#</th><th>SSID</th><th>BSSID</th><th>RSSI</th><th>Ch</th><th>Security</th></tr>";
@@ -583,7 +612,6 @@ void StarbeamWebServer::handleSecurityRoot() {
     server->sendContent("</table>");
     yield();
 
-    // Attack controls section
     String controls = "<h2>Attack Controls</h2>";
     controls += "<h3>Targeted Deauthentication</h3>";
     controls += "<form method='post' action='/api/attack/deauth'>";
@@ -629,7 +657,6 @@ void StarbeamWebServer::handleSecurityRoot() {
     server->sendContent(pmkid);
     yield();
 
-    // PMKID Captures Section
     server->sendContent("<h2>Captured PMKIDs</h2>");
     int pmkidCount = WiFiAttack::getPMKIDHistoryCount();
 
@@ -655,7 +682,6 @@ void StarbeamWebServer::handleSecurityRoot() {
                 String row = "<tr style='background:#222;'>";
                 row += "<td style='padding:8px;border:1px solid #555;'>" + String(capture->ssid) + "</td>";
 
-                // AP MAC
                 row += "<td style='padding:8px;border:1px solid #555;font-family:monospace;font-size:11px;'>";
                 for (int j = 0; j < 6; j++) {
                     char hex[3];
@@ -665,7 +691,6 @@ void StarbeamWebServer::handleSecurityRoot() {
                 }
                 row += "</td>";
 
-                // PMKID (first 8 bytes)
                 row += "<td style='padding:8px;border:1px solid #555;font-family:monospace;font-size:11px;'>";
                 for (int j = 0; j < 8; j++) {
                     char hex[3];
@@ -678,17 +703,14 @@ void StarbeamWebServer::handleSecurityRoot() {
                 yield();
             }
         }
-
         server->sendContent("</table>");
     } else {
         server->sendContent("<p style='color:#999;'>No PMKID captures yet.</p>");
     }
 
     yield();
-
-    // Send footer and end
     server->sendContent(generateHTMLFooter());
-    server->sendContent("");  // End chunked transfer
+    server->sendContent("");
 }
 
 void StarbeamWebServer::handleStartDeauth() {
@@ -718,7 +740,6 @@ void StarbeamWebServer::handleStopAttack() {
     WiFiAttack::stopAttack();
     WiFiAttack::deinit();
     Serial.println("[WebServer] Stopped attack");
-
     server->sendHeader("Location", "/security");
     server->send(302);
 }
@@ -737,8 +758,6 @@ void StarbeamWebServer::handleAttackStatus() {
 
 void StarbeamWebServer::handleStartBeacon() {
     WiFiAttack::init();
-
-    // Use default SSID list for beacon flooding
     const char* fake_ssids[20] = {
         "Free WiFi", "Airport WiFi", "Guest Network", "Starbucks WiFi",
         "xfinitywifi", "ATT WiFi", "Verizon WiFi", "Public WiFi",
@@ -746,21 +765,16 @@ void StarbeamWebServer::handleStartBeacon() {
         "Visitor WiFi", "Free Internet", "WiFi Access", "Network",
         "Internet", "WiFi", "Wireless", "Public"
     };
-
     WiFiAttack::startBeaconFlood(fake_ssids, 20);
     Serial.println("[WebServer] Started beacon flooding attack");
-
     server->sendHeader("Location", "/security");
     server->send(302);
 }
 
 void StarbeamWebServer::handleStartProbe() {
     WiFiAttack::init();
-
-    // Start probe flooding in wildcard mode
     WiFiAttack::startProbeFlood("");
     Serial.println("[WebServer] Started probe flooding attack");
-
     server->sendHeader("Location", "/security");
     server->send(302);
 }
@@ -770,13 +784,10 @@ void StarbeamWebServer::handleStartPMKID() {
         server->send(400, "text/plain", "Missing network parameter");
         return;
     }
-
     int network = server->arg("network").toInt();
-
     WiFiAttack::init();
     WiFiAttack::startPMKIDCapture(network);
     Serial.printf("[WebServer] Started PMKID capture on network %d\n", network);
-
     server->sendHeader("Location", "/security");
     server->send(302);
 }
@@ -793,82 +804,53 @@ void StarbeamWebServer::handlePMKIDList() {
             json += "{";
             json += "\"ssid\":\"" + String(capture->ssid) + "\",";
             json += "\"timestamp\":" + String(capture->timestamp) + ",";
-
-            // AP MAC
             json += "\"ap_mac\":\"";
             for (int j = 0; j < 6; j++) {
-                char hex[3];
-                sprintf(hex, "%02x", capture->ap_mac[j]);
-                json += hex;
+                char hex[3]; sprintf(hex, "%02x", capture->ap_mac[j]); json += hex;
                 if (j < 5) json += ":";
             }
             json += "\",";
-
-            // Station MAC
             json += "\"station_mac\":\"";
             for (int j = 0; j < 6; j++) {
-                char hex[3];
-                sprintf(hex, "%02x", capture->station_mac[j]);
-                json += hex;
+                char hex[3]; sprintf(hex, "%02x", capture->station_mac[j]); json += hex;
                 if (j < 5) json += ":";
             }
             json += "\",";
-
-            // PMKID hex
             json += "\"pmkid\":\"";
             for (int j = 0; j < 16; j++) {
-                char hex[3];
-                sprintf(hex, "%02x", capture->pmkid[j]);
-                json += hex;
+                char hex[3]; sprintf(hex, "%02x", capture->pmkid[j]); json += hex;
             }
             json += "\"";
-
             json += "}";
         }
     }
-
     json += "]}";
-
     server->sendHeader("Access-Control-Allow-Origin", "*");
     server->send(200, "application/json", json);
 }
 
 void StarbeamWebServer::handlePMKIDDownload() {
     String hashcat = "";
-
     for (int i = 0; i < WiFiAttack::getPMKIDHistoryCount(); i++) {
         const pmkid_capture_t* capture = WiFiAttack::getPMKIDHistory(i);
         if (capture && capture->valid) {
-            // Format: PMKID*AP_MAC*STATION_MAC*SSID
             for (int j = 0; j < 16; j++) {
-                char hex[3];
-                sprintf(hex, "%02x", capture->pmkid[j]);
-                hashcat += hex;
+                char hex[3]; sprintf(hex, "%02x", capture->pmkid[j]); hashcat += hex;
             }
             hashcat += "*";
-
             for (int j = 0; j < 6; j++) {
-                char hex[3];
-                sprintf(hex, "%02x", capture->ap_mac[j]);
-                hashcat += hex;
+                char hex[3]; sprintf(hex, "%02x", capture->ap_mac[j]); hashcat += hex;
             }
             hashcat += "*";
-
             for (int j = 0; j < 6; j++) {
-                char hex[3];
-                sprintf(hex, "%02x", capture->station_mac[j]);
-                hashcat += hex;
+                char hex[3]; sprintf(hex, "%02x", capture->station_mac[j]); hashcat += hex;
             }
             hashcat += "*";
-
             hashcat += String(capture->ssid);
             hashcat += "\n";
         }
     }
-
-    if (hashcat.length() == 0) {
-        hashcat = "# No PMKID captures found\n";
-    }
+    if (hashcat.length() == 0) hashcat = "# No PMKID captures found\n";
 
     server->sendHeader("Content-Disposition", "attachment; filename=pmkids.txt");
     server->send(200, "text/plain", hashcat);
@@ -877,7 +859,6 @@ void StarbeamWebServer::handlePMKIDDownload() {
 void StarbeamWebServer::handlePMKIDClear() {
     WiFiAttack::clearPMKIDHistory();
     Serial.println("[WebServer] Cleared PMKID history");
-
     server->sendHeader("Location", "/security");
     server->send(302);
 }

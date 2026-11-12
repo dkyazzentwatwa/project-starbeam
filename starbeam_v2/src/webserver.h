@@ -14,6 +14,8 @@ public:
     static void handleClient();  // Process requests (call in loop)
     static bool isRunning();     // Check if server active
     static String getIP();       // Get AP IP address
+    static void setStaMode(bool enabled);
+    static bool isStaMode();
 
 private:
     // HTTP request handlers
@@ -51,6 +53,7 @@ private:
     static IPAddress apIP;
     static bool wifiScanEnabled;        // Background WiFi scanning state
     static bool bleScanEnabled;         // Background BLE scanning state
+    static bool staModeEnabled;
 };
 
 #endif
