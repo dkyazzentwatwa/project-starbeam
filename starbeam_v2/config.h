@@ -16,13 +16,13 @@
 #define DEFAULT_AP_ENABLED false       // Default AP to OFF
 
 static const char* const STA_SSIDS[MAX_STA_NETWORKS] = {
-    "hulse",
-    "linksys320"
+    "wifi1",
+    "wifi2"
 };
 
 static const char* const STA_PASSWORDS[MAX_STA_NETWORKS] = {
-    "tc2012meta1",
-    "wasbakplassert"
+    "wifi1_pass",
+    "wifi2_pass"
 };
 
 
