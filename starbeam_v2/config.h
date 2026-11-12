@@ -47,7 +47,7 @@ static const char* const STA_PASSWORDS[MAX_STA_NETWORKS] = {
 // #define NRF24_4_CS  2
 
 // // NRF24 Radio 5 (HSPI) - Can also be CC1101 #2
-// #define NRF24_5_CE  32c:\Users\Rob\Downloads\starbeam\project-starbeam-main\project-starbeam-main\starbeam_v2\src\nrf24.cpp
+// #define NRF24_5_CE  32
 // #define NRF24_5_CS  17
 
 // NRF24 Radio 4 (HSPI) - 
