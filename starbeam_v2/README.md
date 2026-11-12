@@ -1,484 +1,650 @@
-# Starbeam V2 - Modular Firmware
+# Project Starbeam V2 – Custom Fork
 
-This is the **V2 modular firmware** for Project Starbeam - a complete refactoring of the V1 monolithic codebase into a clean, maintainable architecture.
+This repository contains a customized fork of the original [Project Starbeam V2](https://github.com/dkyazzentwatwa/project-starbeam) project.
 
-## TL;DR - One Command to Rule Them All
+This fork includes hardware compatibility fixes, improved WiFi connectivity, an automatically starting web server, terminal/CLI functionality, and various stability and user interface improvements.
 
-```bash
-# Compile and upload (requires huge_app partition for security features)
-arduino-cli compile --upload --fqbn esp32:esp32:esp32:PartitionScheme=huge_app -p /dev/cu.SLAB_USBtoUART .
-```
+> [!WARNING]
+> **IMPORTANT: STARBEAM V2 ONLY**
+>
+> This firmware and all modifications described in this repository apply **exclusively to Starbeam V2 hardware**.
+>
+> It is NOT compatible with Starbeam V1.
 
-Replace `/dev/cu.SLAB_USBtoUART` with your ESP32 port (Linux: `/dev/ttyUSB0`, Windows: `COM3`)
+> [!IMPORTANT]
+> **HARDWARE CONFIGURATION**
+>
+> This firmware is optimized for the following hardware configuration:
+>
+> - **3× NRF24L01 modules** using VSPI.
+> - **2× CC1101 modules** using HSPI.
+>
+> NRF24 radios 4 and 5 are disabled in `config.h` because the HSPI bus is dedicated to the two CC1101 modules.
 
-## Quick Start
+> [!TIP]
+> **DNF RESISTORS ARE NOT REQUIRED**
+>
+> Thanks to improved software-level SPI bus management, the DNF (Do Not Fit) resistors are no longer required for this configuration. They can remain unpopulated.
 
-### Prerequisites
+---
 
-- **Arduino IDE 2.x** or **Arduino CLI** (CLI recommended for automation)
-- **ESP32 Board Support**: `https://dl.espressif.com/dl/package_esp32_index.json`
-- **Required Libraries**: Adafruit GFX, Adafruit SSD1306, U8g2_for_Adafruit_GFX, RF24, ELECHOUSE_CC1101_SRC_DRV
+## Table of Contents
 
-### Compilation & Upload with Arduino CLI
+- [Project Overview](#project-overview)
+- [Hardware Configuration](#hardware-configuration)
+- [Quick Start and Compilation](#quick-start-and-compilation)
+  - [Prerequisites](#prerequisites)
+  - [Required Libraries](#required-libraries)
+  - [Compile and Upload Using Arduino CLI](#compile-and-upload-using-arduino-cli)
+  - [Compile Using Arduino IDE](#compile-using-arduino-ide)
+- [Changes and Improvements](#changes-and-improvements-in-this-fork)
+  - [WiFi Station Mode and Automatic Web Server](#1-wifi-station-sta-mode-and-automatic-web-server)
+  - [GPIO and Hardware Fixes](#2-hardware-and-gpio-fixes)
+  - [NRF24 and WiFi Conflict Fix](#3-nrf24-and-wifi-conflict-fix)
+  - [UI and Menu Improvements](#4-ui-and-menu-improvements)
+- [Web Server and API](#web-server-and-api)
+- [Terminal and CLI Mode](#terminal-and-cli-mode-headless-operation)
+- [Configuration](#configuration)
+- [Testing and Troubleshooting](#testing-and-troubleshooting)
+- [License](#license)
+- [Credits](#credits)
 
-**IMPORTANT**: This firmware **requires** the `huge_app` partition scheme (3MB for program) to fit all features including WiFi security testing and web server. The default partition scheme (1.2MB) is insufficient.
+---
 
-```bash
-# First-time setup: Install Arduino CLI
-# macOS:
-brew install arduino-cli
+## Project Overview
 
-# Linux:
-curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+Project Starbeam V2 is an ESP32-based multi-radio platform.
 
-# Windows: Download from https://arduino.github.io/arduino-cli/
+This custom fork focuses on improving hardware compatibility, reliability, connectivity, and remote accessibility.
 
-# Install ESP32 platform (first time only)
-arduino-cli core update-index
-arduino-cli core install esp32:esp32
+### Main Features
 
-# Install required libraries (first time only)
-arduino-cli lib install "Adafruit GFX Library"
-arduino-cli lib install "Adafruit SSD1306"
-arduino-cli lib install "U8g2_for_Adafruit_GFX"
-arduino-cli lib install "RF24"
-arduino-cli lib install "ELECHOUSE_CC1101_SRC_DRV"
+- Automatic WiFi connection using up to three configured networks.
+- Automatic fallback to WiFi Access Point mode.
+- Automatically started web server.
+- Web-based device monitoring and control.
+- OLED display showing the active IP address.
+- Serial terminal interface for headless operation.
+- Improved GPIO compatibility.
+- Improved SPI bus handling.
+- NRF24 and CC1101 hardware configuration adjustments.
+- Improved menu navigation and button handling.
 
-# Find your ESP32 port
-ls /dev/cu.*        # macOS
-ls /dev/ttyUSB*     # Linux
-# Windows: Check Device Manager (COMx)
-
-# Compile and upload in one command (recommended)
-arduino-cli compile --upload --fqbn esp32:esp32:esp32:PartitionScheme=huge_app -p /dev/cu.SLAB_USBtoUART .
-
-# Or compile first, then upload separately
-arduino-cli compile --fqbn esp32:esp32:esp32:PartitionScheme=huge_app .
-arduino-cli upload --fqbn esp32:esp32:esp32:PartitionScheme=huge_app -p /dev/cu.SLAB_USBtoUART .
-
-# Monitor serial output (115200 baud)
-screen /dev/cu.SLAB_USBtoUART 115200
-# Or: arduino-cli monitor -p /dev/cu.SLAB_USBtoUART -c baudrate=115200
-```
-
-**Common port names**:
-- macOS: `/dev/cu.SLAB_USBtoUART`, `/dev/cu.usbserial-*`, `/dev/cu.wchusbserial*`
-- Linux: `/dev/ttyUSB0`, `/dev/ttyACM0`
-- Windows: `COM3`, `COM4`, `COM5` (check Device Manager)
-
-### Using Arduino IDE
-
-1. Open `starbeam_v2.ino`
-2. Tools → Board → ESP32 Arduino → ESP32 Dev Module
-3. **Tools → Partition Scheme → Huge APP (3MB No OTA/1MB SPIFFS)** ← **REQUIRED**
-4. Tools → Upload Speed → 921600
-5. Tools → Port → Select your ESP32 port
-6. Sketch → Upload (Ctrl+U / Cmd+U)
-
-If upload fails, hold the **BOOT** button on the ESP32 during the "Connecting..." phase.
-
-## Architecture Overview
-
-### File Structure
-
-```
-starbeam_v2/
-├── starbeam_v2.ino          # Main firmware, state machine, menu system
-├── config.h                  # Hardware pins, buffer sizes, timing constants
-├── types.h                   # Enums (AppState, MenuItem), structs
-└── src/
-    ├── display.h/cpp         # OLED display interface
-    ├── input.h/cpp           # Button handling with debouncing
-    ├── terminal.h/cpp        # Serial CLI interface (headless operation)
-    ├── nrf24.h/cpp           # NRF24L01 radio management (5 radios)
-    ├── cc1101.h/cpp          # CC1101 radio control (2 radios)
-    ├── analyzer.h/cpp        # NRF24 spectrum analyzer
-    ├── recording.h/cpp       # Signal capture/replay
-    ├── wifi_scanner.h/cpp    # WiFi network enumeration
-    ├── ble_scanner.h/cpp     # BLE device discovery
-    ├── webserver.h/cpp       # Web interface with captive portal
-    └── wifi_attack.h/cpp     # WiFi security testing framework
-```
-
-### Key Differences from V1
-
-| Aspect | V1 | V2 |
-|--------|----|----|
-| **Structure** | Monolithic (~1000+ lines) | Modular (11+ files) |
-| **Configuration** | Hardcoded in main file | Centralized in config.h |
-| **Types** | Scattered definitions | Centralized in types.h |
-| **Radio Control** | Inline code | Dedicated modules |
-| **Terminal/CLI** | Debug output only | Full command interface + display echo |
-| **Web Interface** | Basic HTML | Full REST API + captive portal |
-| **WiFi Attacks** | Not implemented | Full framework with 5 modes |
-| **Maintainability** | Difficult | Easy to extend |
+---
 
 ## Hardware Configuration
 
-All hardware configuration is in `config.h`:
+This build is designed around the following radio configuration:
 
-- **NRF24 Radios 1-3**: VSPI bus (CE=27/26/25, CS=15/33/5)
-- **NRF24 Radios 4-5**: HSPI bus (CE=4/32, CS=2/17)
-- **CC1101 Radios 1-2**: HSPI bus (SS=2/32, GDO0=4/35, GDO2=16/17)
-- **Display**: SSD1306 OLED, I2C @ 0x3C
-- **Buttons**: Up=39, Down=34, Select=36
+| Component | Quantity | SPI Bus | Status |
+|---|---:|---|---|
+| NRF24L01 | 3 | VSPI | Enabled |
+| NRF24L01 | 2 (radio 4 and 5) | HSPI | Disabled |
+| CC1101 | 2 | HSPI | Enabled |
+| ESP32 | 1 | Internal | Enabled |
 
-## Features
+### SPI Bus Allocation
 
-### Core Capabilities
+**VSPI**
+- NRF24 module 1
+- NRF24 module 2
+- NRF24 module 3
 
-- **RF Jamming**: Bluetooth, WiFi, Drone, CC1101 (authorized use only)
-- **RF Analysis**: NRF24 spectrum scanner, CC1101 frequency scanner
-- **Signal Recording**: Capture and replay RF signals
-- **Network Scanning**: WiFi networks, BLE devices, channel heatmaps
+**HSPI**
+- CC1101 module 1
+- CC1101 module 2
 
-### WiFi Security Testing (NEW in V2)
+### DNF Resistors
 
-**⚠️ REQUIRES AUTHORIZATION - Educational/Research Use Only**
+The DNF resistors do not need to be populated for this hardware configuration.
 
-- **Deauthentication**: Targeted (specific client) or broadcast (all networks)
-- **Beacon Flooding**: Generate up to 20 fake access points
-- **Probe Request Flooding**: Simulate multiple client devices
-- **PMKID Capture**: Extract WPA2/WPA3 handshake data
+The firmware handles the SPI bus configuration in software, eliminating the need for these resistors.
 
-### Web Interface (Enhanced in V2)
+---
 
-Access via `http://192.168.4.1` after connecting to `StarbeamAP`:
+## Quick Start and Compilation
 
-- WiFi Scanner Dashboard (live updates)
-- BLE Scanner Dashboard (live updates)
-- Security Testing Dashboard (attack control)
-- JSON APIs for remote monitoring
+> [!IMPORTANT]
+> **Required Partition Scheme: HUGE APP**
+>
+> This firmware requires the `huge_app` partition scheme to accommodate the program and its included features.
+>
+> The default partition scheme (approximately 1.2 MB application space) is insufficient.
+>
+> Use:
+>
+> `Huge APP (3MB No OTA/1MB SPIFFS)`
 
-**Endpoints**:
-- `/api/wifi` - WiFi scan results
-- `/api/ble` - BLE scan results
-- `/api/attack/status` - Attack status
-- `/security` - Security testing interface
+### Prerequisites
 
-### Terminal/CLI Mode (NEW in V2)
+You will need:
 
-**Headless Operation** - Control Starbeam via serial terminal without physical buttons or display!
+- Arduino IDE 2.x or Arduino CLI.
+- Compatible ESP32 development board.
+- USB data cable.
+- Required radio modules and peripherals.
+- ESP32 board support package.
 
-Connect via USB serial at 115200 baud and type commands directly:
+### ESP32 Board Support
+
+Add the following URL to Arduino IDE under:
+
+**File → Preferences → Additional Boards Manager URLs**
+
+```text
+https://dl.espressif.com/dl/package_esp32_index.json
+```
+
+Then install the ESP32 board package through Boards Manager.
+
+### Required Libraries
+
+Install the following libraries:
+
+| Library | Required Version |
+|---|---|
+| Adafruit GFX Library | Latest compatible |
+| Adafruit SSD1306 | Latest compatible |
+| U8g2_for_Adafruit_GFX | Latest compatible |
+| RF24 | Latest compatible |
+| SmartRC-CC1101-Driver-Lib | **2.5.7** |
+
+> [!IMPORTANT]
+> The SmartRC-CC1101-Driver-Lib version is specifically pinned to **2.5.7** because this fork includes compatibility modifications for GPIO35.
+
+### Compile and Upload Using Arduino CLI
+
+Install the required libraries:
 
 ```bash
-# Connect to ESP32
-screen /dev/cu.SLAB_USBtoUART 115200
-# Or: arduino-cli monitor -p /dev/cu.SLAB_USBtoUART -c baudrate=115200
-
-# You'll see the terminal prompt
-> help
-```
-
-**Key Features**:
-- **36 Commands**: All menu items accessible via typed commands (e.g., `wifi_scan`, `bt_jam`, `deauth_target`)
-- **Display Echo**: OLED screen content mirrored to terminal (toggle with `echo on/off`)
-- **Stop Command**: Interrupt any running operation with `stop`
-- **Help System**: Type `help` to see all available commands
-- **Status Info**: Type `status` for system information
-- **Last Input Wins**: Buttons and terminal both work - whichever is used last takes control
-
-**Command Examples**:
-
-```bash
-> help                # Show all 36 commands with descriptions
-> status              # Display system status (heap, uptime, settings)
-> menu                # List all menu items with numbers
-
-> wifi_scan           # Scan for WiFi networks
-> ble_scan            # Scan for BLE devices
-> bt_jam              # Start Bluetooth jammer
-> stop                # Stop current operation
-
-> echo off            # Disable display echo to terminal
-> echo on             # Enable display echo (default)
-> verbose on          # Enable verbose logging
-```
-
-**All 36 Available Commands**:
-
-| Command | Description |
-|---------|-------------|
-| `bt_jam` | Bluetooth jammer (2.4GHz) |
-| `drone_jam` | Drone jammer |
-| `wifi_jam` | WiFi jammer (2.4GHz) |
-| `cc1_jam` | 433MHz jammer (both radios) |
-| `cc_scan` | CC1101 frequency scan |
-| `nrf_scan` | NRF24 spectrum analyzer |
-| `wifi_scan` | WiFi network scanner |
-| `wifi_heatmap` | WiFi channel heatmap |
-| `ble_scan` | BLE device scanner |
-| `web_on` | Start web server |
-| `web_off` | Stop web server |
-| `web_status` | Web server status |
-| `deauth_target` | Targeted deauth attack |
-| `deauth_all` | Broadcast deauth attack |
-| `beacon_flood` | Beacon flooding attack |
-| `probe_flood` | Probe request flooding |
-| `pmkid` | PMKID capture |
-| `test_nrf` | Test NRF24 radios (VSPI) |
-| `test_cc` | Test CC1101 radios |
-| `test_hspi` | Test NRF24 radios (HSPI) |
-| `cc1_single` | CC1101 #1 only jammer |
-| `cc2_single` | CC1101 #2 only jammer |
-| `rec_raw` | Record raw 433MHz signal |
-| `play_raw` | Replay raw 433MHz signal |
-| `show_raw` | Show raw recording data |
-| `show_buff` | Show buffer contents |
-| `get_rssi` | Get CC1101 RSSI value |
-| `flush_buff` | Clear recording buffer |
-| `stop_all` | Stop all operations |
-| `reset_cc` | Reset CC1101 radios |
-| `freq_43440` | Set frequency 434.40MHz |
-| `freq_43430` | Set frequency 434.30MHz |
-| `freq_43400` | Set frequency 434.00MHz |
-| `freq_43390` | Set frequency 433.90MHz |
-| `settings` | Settings menu |
-| `help` | Show help |
-
-**Special Commands** (not in menu):
-- `help` or `?` - Show full command reference
-- `status` - System status (heap, uptime, settings)
-- `menu` - List all 36 menu items
-- `stop` - Interrupt current operation
-- `echo on/off` - Toggle display echo
-- `verbose on/off` - Toggle verbose logging
-
-**Typical Workflow**:
-
-```bash
-# Connect via serial terminal
-> status                    # Check system status
-Free Heap:     245832 bytes
-Uptime:        42 seconds
-Display Echo:  ON
-Verbose:       OFF
-
-> wifi_scan                 # Start WiFi scan
-Serial command - exiting current operation
-Selected menu item: 6
-WIFI_SCAN selected
-
-[WiFi scan results appear both on OLED and in terminal]
-
-> stop                      # Stop scanning
-Stop signal sent
-
-> bt_jam                    # Switch to BT jamming
-Serial command - exiting current operation
-Selected menu item: 0
-BT JAM selected
-
-> stop                      # Stop jamming
-```
-
-**Implementation Details**:
-- Non-blocking serial input processing
-- Command buffer: 128 characters
-- Echo enabled by default
-- Backspace/delete support
-- Case-insensitive command parsing
-- Module: `src/terminal.h/cpp` (~600 lines)
-
-## Development Guide
-
-### Adding New Menu Items
-
-1. **Add state** to `AppState` enum in `types.h`:
-   ```cpp
-   enum AppState {
-       // ... existing states
-       STATE_MY_NEW_FEATURE,
-   };
-   ```
-
-2. **Add menu item** to `MenuItem` enum in `types.h`:
-   ```cpp
-   enum MenuItem {
-       // ... existing items
-       MY_NEW_FEATURE,
-   };
-   ```
-
-3. **Implement handler** in `starbeam_v2.ino`:
-   ```cpp
-   void loop() {
-       switch (currentState) {
-           // ... existing cases
-           case STATE_MY_NEW_FEATURE:
-               handleMyNewFeature();
-               break;
-       }
-   }
-   ```
-
-4. **Add to menu system** in main file menu rendering
-
-### Adding New Modules
-
-1. **Create header** (`src/my_module.h`):
-   ```cpp
-   #ifndef MY_MODULE_H
-   #define MY_MODULE_H
-
-   class MyModule {
-   public:
-       static void init();
-       static void doSomething();
-   };
-
-   #endif
-   ```
-
-2. **Create implementation** (`src/my_module.cpp`):
-   ```cpp
-   #include "my_module.h"
-
-   void MyModule::init() {
-       // Initialization code
-   }
-
-   void MyModule::doSomething() {
-       // Feature code
-   }
-   ```
-
-3. **Include in main file**:
-   ```cpp
-   #include "src/my_module.h"
-   ```
-
-4. **Initialize in setup()**:
-   ```cpp
-   void setup() {
-       // ... other init
-       MyModule::init();
-   }
-   ```
-
-### Modifying Hardware Configuration
-
-Edit `config.h` to change:
-
-- Pin assignments (NRF24_X_CE, NRF24_X_CS, etc.)
-- Buffer sizes (CCBUFFERSIZE, RECORDINGBUFFERSIZE)
-- Timing constants (DEBOUNCE_MS, DISPLAY_REFRESH_MS)
-- Task configuration (stack sizes, priorities, core assignment)
-
-### Memory Management
-
-V2 uses **static buffer allocation** to prevent heap fragmentation:
-
-- `ccSendBuffer[64]` - CC1101 transmission buffer
-- Attack frame buffers in `wifi_attack.cpp` (128-256 bytes)
-- Display buffers managed by Adafruit library
-
-**Monitor heap usage**:
-```cpp
-Serial.printf("Free heap: %u bytes\n", ESP.getFreeHeap());
-```
-
-Target: >200 KB free heap during operation
-
-## Testing
-
-### Compilation Test (No Hardware)
-
-```bash
-cd ..  # Go to project root
-./test_build.sh
-```
-
-Expected output:
-```
-✓ COMPILATION SUCCESSFUL
-Binary size: 1.81 MB (58%)
-Sketch uses ~892KB flash, ~45KB RAM
-```
-
-### Serial Debug Output
-
-Enable verbose logging at 115200 baud to see:
-
-- Boot sequence
-- Module initialization status
-- WiFi/BLE scan results with MAC addresses
-- Attack statistics (frames sent, clients disconnected)
-- PMKID data in hashcat format
-- RSSI measurements
-
-### Common Issues
-
-**Compilation fails with missing libraries**:
-```bash
-# Install via Arduino CLI
 arduino-cli lib install "Adafruit GFX Library"
 arduino-cli lib install "Adafruit SSD1306"
 arduino-cli lib install "U8g2_for_Adafruit_GFX"
 arduino-cli lib install "RF24"
-arduino-cli lib install "ELECHOUSE_CC1101_SRC_DRV"
+arduino-cli lib install "SmartRC-CC1101-Driver-Lib@2.5.7"
 ```
 
-**Upload fails**:
-- Hold BOOT button during upload
-- Try slower upload speed: 460800 instead of 921600
-- Verify correct port selection
+Compile and upload:
 
-**Out of memory**:
-- Use partition scheme `huge_app` (3MB for code)
-- Check heap usage with `ESP.getFreeHeap()`
-- Reduce buffer sizes in `config.h` if needed
+```bash
+arduino-cli compile --upload \
+  --fqbn esp32:esp32:esp32:PartitionScheme=huge_app \
+  -p /dev/cu.SLAB_USBtoUART .
+```
 
-**WiFi attacks not working**:
-- Ensure `huge_app` partition scheme is selected
-- Check serial monitor for error messages
-- Verify WiFi initialization completed successfully
+Replace `/dev/cu.SLAB_USBtoUART` with your actual ESP32 serial port.
 
-## Performance Metrics
+Examples:
 
-**Flash & RAM** (V2):
-- Program Storage: 1.81 MB / 3 MB (58%)
-- Dynamic Memory: ~70 KB / 320 KB (21%)
-- Free Heap: >200 KB during operation
+**Windows**
+```bash
+-p COM3
+```
 
-**Attack Performance**:
-- Beacon Flood: >100 beacons/second
-- Probe Flood: >500 probes/second
-- Deauth (Targeted): Real-time client elimination
-- Deauth (Broadcast): Full channel coverage (1-13)
+**Linux**
+```bash
+-p /dev/ttyUSB0
+```
 
-**Boot Time**: ~2.5 seconds
+**macOS**
+```bash
+-p /dev/cu.SLAB_USBtoUART
+```
 
-## Legal Notice
+### Compile Using Arduino IDE
 
-**⚠️ CRITICAL**: This firmware includes WiFi security testing features that are **strictly regulated** by law.
+1. Open `starbeam_v2.ino`.
+2. Navigate to **Tools → Board → ESP32 Arduino**.
+3. Select **ESP32 Dev Module**.
+4. Navigate to **Tools → Partition Scheme**.
+5. Select **Huge APP (3MB No OTA/1MB SPIFFS)**.
+6. Navigate to **Tools → Port**.
+7. Select your ESP32 serial port.
+8. Click **Sketch → Upload**.
 
-**Authorized Use Only**:
-- Penetration testing with signed contract
-- Educational research in controlled lab
-- Security audits with client authorization
-- Your own personal network
+Make sure the correct partition scheme is selected before compiling.
 
-**Prohibited Use**:
-- Public WiFi networks (coffee shops, airports, etc.)
-- Any network without explicit written permission
-- Malicious or illegal activity
+---
 
-Violating computer crime laws can result in criminal prosecution, civil liability, and imprisonment. Users are solely responsible for compliance with all applicable laws including:
+## Changes and Improvements in This Fork
 
-- **USA**: Computer Fraud and Abuse Act (CFAA), FCC Part 15
-- **UK**: Computer Misuse Act 1990, Wireless Telegraphy Act 2006
-- **EU**: GDPR, national computer crime laws
+### 1. WiFi Station (STA) Mode and Automatic Web Server
 
-See main README.md for complete legal disclaimer.
+The WiFi implementation has been improved to allow the device to connect automatically to existing wireless networks.
 
-## Resources
+#### Automatic Startup
 
-- **Main Documentation**: See `../README.md` and `../CLAUDE.md`
-- **Testing Guide**: See `../TESTING.md`
-- **Hardware Design**: See `../hardware/starbeam_V1_design/`
+- The web server now starts automatically during `setup()`.
+- No manual menu navigation is required to start the web interface.
+- The device becomes accessible as soon as network initialization is complete.
+
+#### Multiple WiFi Networks
+
+The ESP32 can attempt to connect to up to three predefined WiFi networks during startup.
+
+Networks are configured in `config.h`.
+
+#### Automatic Access Point Fallback
+
+If none of the configured WiFi networks are available, the ESP32 automatically switches to Access Point mode.
+
+Default AP configuration:
+
+| Setting | Value |
+|---|---|
+| SSID | `Starbeam` |
+| Password | `starbeam2024` |
+| Mode | Access Point |
+
+This ensures that the device remains accessible even when no configured WiFi network is available.
+
+#### WiFi Mode Menu Toggle
+
+A new `WiFi Mode` menu option allows switching between:
+
+- WiFi Station (STA) mode.
+- WiFi Access Point (AP) mode.
+
+#### OLED IP Address Display
+
+The OLED display now shows the active IP address during startup.
+
+This makes it easier to identify the address required to access the web interface.
+
+---
+
+### 2. Hardware and GPIO Fixes
+
+Several ESP32 GPIO compatibility issues have been addressed.
+
+#### GPIO35 – CC1101 Module 2 (GDO0)
+
+The ESP32 has input-only GPIO pins.
+
+GPIO34 through GPIO39 cannot be configured as output pins.
+
+The original SmartRC CC1101 library configuration attempted to configure GDO0 as an output, causing initialization problems when using GPIO35.
+
+**Modification:**
+
+The `SmartRC_CC1101-Driver-Lib` has been patched so that GDO0 is no longer configured as an output.
+
+This allows the second CC1101 module, connected to GPIO35, to initialize without triggering the GPIO output configuration error.
+
+#### GPIO34 and GPIO39 – Button Inputs
+
+GPIO34 and GPIO39 are input-only pins and do not have internal pull-up resistors.
+
+The original implementation attempted to use:
+
+```cpp
+INPUT_PULLUP
+```
+
+This caused GPIO configuration errors, including:
+
+```text
+gpio_pullup_en(85)
+```
+
+**Modification:**
+
+The `INPUT_PULLUP` configuration has been removed from the relevant button inputs in `analyzer.cpp`.
+
+These pins now rely on the hardware's external pull-up resistors.
+
+> [!NOTE]
+> External pull-up resistors must be present for the affected inputs to operate correctly.
+
+---
+
+### 3. NRF24 and WiFi Conflict Fix
+
+An important issue involving the ESP32's internal WiFi hardware was identified and corrected.
+
+#### WiFi Hardware Preservation
+
+In the original implementation, the following functions were called inside `analyzer.cpp`:
+
+```cpp
+esp_wifi_stop();
+esp_wifi_deinit();
+```
+
+These calls stopped and deinitialized the ESP32 WiFi subsystem.
+
+As a result, WiFi functionality could become unavailable after running certain analyzer operations.
+
+This affected:
+
+- WiFi scanning.
+- Web server connectivity.
+- Other WiFi-dependent functionality.
+
+**Modification:**
+
+The calls to `esp_wifi_stop()` and `esp_wifi_deinit()` have been removed.
+
+The ESP32 WiFi subsystem remains initialized, allowing WiFi scanning and web server functionality to continue working.
+
+#### Disabled NRF24 Modules 4 and 5
+
+In `config.h`, NRF24 modules 4 and 5 have been disabled:
+
+```cpp
+-1
+```
+
+This is necessary because the HSPI bus is dedicated to the two CC1101 modules in this hardware configuration.
+
+#### Updated HSPI Test
+
+The HSPI hardware test has also been updated.
+
+Instead of testing the disabled NRF24 modules, it now tests the two installed CC1101 modules.
+
+---
+
+### 4. UI and Menu Improvements
+
+Several usability improvements have been made to the OLED menu system.
+
+#### Button Debouncing and Release Detection
+
+A button release detection mechanism has been added to the main `loop()`.
+
+This prevents the device from immediately triggering another menu action when the SELECT button is still being held after exiting a feature.
+
+Benefits:
+
+- More reliable menu navigation.
+- Reduced accidental selections.
+- Improved button responsiveness.
+- Fewer unintended repeated actions.
+
+#### Menu Alignment
+
+The `menuLabels` array in `display.cpp` has been aligned with the `MenuItem` enumeration in `types.h`.
+
+This resolves menu alignment problems and eliminates empty entries caused by mismatched menu indexes.
+
+---
+
+## Web Server and API
+
+The built-in web server provides remote access to Starbeam V2 functionality through a browser.
+
+The web interface allows users to monitor device information and access available features without navigating the physical OLED menu.
+
+### Available Endpoints
+
+| Endpoint | Format | Description |
+|---|---|---|
+| `/api/wifi` | JSON | WiFi information |
+| `/api/ble` | JSON | Bluetooth Low Energy information |
+| `/api/attack/status` | JSON | Operation status |
+| `/security` | HTML | Security interface |
+| `/wifi` | HTML | WiFi interface |
+| `/ble` | HTML | Bluetooth interface |
+
+### Web Interface Features
+
+Depending on the configured firmware features, the web interface provides:
+
+- WiFi information and monitoring.
+- BLE information and monitoring.
+- Security testing controls.
+- Operation status monitoring.
+- Remote access to supported functions.
+
+### Security Testing Interface
+
+The web interface includes controls for the following security-testing operations:
+
+- Deauthentication testing.
+- Beacon flood testing.
+- Probe flood testing.
+- PMKID capture operations.
+
+These features are intended for authorized testing on networks and devices that you own or have explicit permission to assess.
+
+### Captive Portal
+
+When operating in Access Point mode, the device includes captive portal functionality.
+
+DNS requests are redirected to the main web interface, making it easier to access the Starbeam interface after connecting to the device's WiFi network.
+
+---
+
+## Terminal and CLI Mode (Headless Operation)
+
+Starbeam V2 can also be controlled through its serial interface.
+
+This makes it possible to operate the device without relying on the physical buttons or OLED display.
+
+### Serial Configuration
+
+| Setting | Value |
+|---|---|
+| Baud rate | 115200 |
+| Connection | USB Serial |
+| Interface | Serial Monitor / Terminal |
+
+### Display Echo
+
+The contents normally displayed on the OLED screen are also mirrored to the serial terminal.
+
+This allows users to monitor the device's interface remotely through a serial connection.
+
+### Available Commands
+
+Type:
+
+```text
+help
+```
+
+The firmware displays the available command list, containing 36 commands.
+
+Examples include:
+
+```text
+wifi_scan
+bt_jam
+deauth_target
+```
+
+The complete command list can be retrieved directly from the device using the `help` command.
+
+### Stop Command
+
+Any running operation can be interrupted using:
+
+```text
+stop
+```
+
+This provides a convenient way to stop active operations without using the physical controls.
+
+---
+
+## Configuration
+
+Most hardware and connectivity settings can be changed in:
+
+```text
+config.h
+```
+
+### Hardware Pin Assignments
+
+The configuration file contains the pin definitions for:
+
+- NRF24 modules.
+- CC1101 modules.
+- OLED display.
+- Physical buttons.
+- SPI interfaces.
+
+Make sure the configured pins match your actual Starbeam V2 hardware.
+
+### WiFi Station Configuration
+
+The firmware supports up to three predefined WiFi networks.
+
+Locate the WiFi configuration in `config.h`:
+
+```cpp
+#define MAX_STA_NETWORKS 3
+
+static const char* const STA_SSIDS[MAX_STA_NETWORKS] = {
+    "YourHomeNetwork",
+    "YourPhoneHotspot",
+    "YourOfficeWiFi"
+};
+
+static const char* const STA_PASSWORDS[MAX_STA_NETWORKS] = {
+    "password1",
+    "password2",
+    "password3"
+};
+```
+
+Replace the example values with your own network credentials.
+
+**Example:**
+
+```cpp
+#define MAX_STA_NETWORKS 3
+
+static const char* const STA_SSIDS[MAX_STA_NETWORKS] = {
+    "HomeWiFi",
+    "MobileHotspot",
+    "BackupNetwork"
+};
+
+static const char* const STA_PASSWORDS[MAX_STA_NETWORKS] = {
+    "HomePassword",
+    "MobilePassword",
+    "BackupPassword"
+};
+```
+
+> [!WARNING]
+> Keep your WiFi credentials private. Do not commit personal network passwords to a public GitHub repository.
+
+---
+
+## Testing and Troubleshooting
+
+### WiFi Scanner Returns 0 Networks
+
+**Possible cause:**
+
+The ESP32 WiFi subsystem has been stopped or deinitialized.
+
+**Solution:**
+
+Check `analyzer.cpp` and ensure the following calls are not being executed:
+
+```cpp
+esp_wifi_stop();
+esp_wifi_deinit();
+```
+
+The WiFi subsystem must remain initialized for scanning and web server functionality to work correctly.
+
+### Upload Fails
+
+If uploading fails during the `Connecting...` stage:
+
+1. Hold the ESP32 BOOT button.
+2. Start the upload.
+3. Release the BOOT button once the upload begins.
+4. If necessary, reduce the upload speed.
+
+A slower upload speed, such as:
+
+```text
+460800
+```
+
+may help with unreliable USB connections.
+
+### Out of Memory / Firmware Too Large
+
+**Possible cause:**
+
+The default ESP32 partition scheme is being used.
+
+**Solution:**
+
+Select:
+
+```text
+Huge APP (3MB No OTA/1MB SPIFFS)
+```
+
+Make sure the same partition scheme is used when compiling through Arduino CLI.
+
+### GPIO Errors During Startup
+
+Check the following modifications:
+
+- GPIO34 and GPIO39 must not use internal pull-ups.
+- External pull-up resistors must be installed where required.
+- GPIO35 must not be configured as an output.
+- The patched SmartRC CC1101 library version 2.5.7 must be installed.
+
+### CC1101 Module 2 Does Not Initialize
+
+Check:
+
+1. The CC1101 module is connected to the correct HSPI pins.
+2. GDO0 is connected to GPIO35.
+3. The patched SmartRC library is installed.
+4. The correct pin assignments are defined in `config.h`.
+
+### Web Interface Is Not Accessible
+
+Check:
+
+1. The ESP32 has completed startup.
+2. The OLED displays a valid IP address.
+3. Your computer or phone is connected to the same network when using STA mode.
+4. You are connected to the `Starbeam` access point when using AP mode.
+5. The web server starts successfully during `setup()`.
+
+---
 
 ## License
 
-Apache License 2.0 - See `../LICENSE` file for details.
+This repository is a customized fork of the original Project Starbeam V2.
+
+Original project:
+
+[Project Starbeam – dkyazzentwatwa](https://github.com/dkyazzentwatwa/project-starbeam)
+
+This fork maintains the original project's licensing terms.
+
+Please refer to the [`LICENSE`](LICENSE) file for the applicable license and redistribution conditions.
+
+---
+
+## Credits
+
+**Original Project**
+
+[dkyazzentwatwa](https://github.com/dkyazzentwatwa)
+
+**Custom Fork Maintainer**
+
+[raspiuser1](https://github.com/raspiuser1)
+
+Thanks to the original developer and the open-source community for making this project possible.
+
+---
+
+*Project Starbeam V2 – Custom Fork*
+
+*Maintained by [raspiuser1](https://github.com/raspiuser1)*
