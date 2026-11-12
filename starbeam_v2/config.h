@@ -12,7 +12,7 @@
 // WiFi Station (STA) Configuration
 // ============================================================================
 #define MAX_STA_NETWORKS 2
-#define DEFAULT_WIFI_STA_ENABLED true  // Default to ONc:\Users\Rob\Downloads\starbeam\project-starbeam-main\project-starbeam-main\starbeam_v2\src\settings.h
+#define DEFAULT_WIFI_STA_ENABLED true  // Default to ON
 #define DEFAULT_AP_ENABLED false       // Default AP to OFF
 
 static const char* const STA_SSIDS[MAX_STA_NETWORKS] = {
