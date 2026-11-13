@@ -15,6 +15,7 @@ This is a customized fork of the original [Project Starbeam V2](https://github.c
 > Thanks to improved software-level SPI bus management, the **DNF (Do Not Fit) resistors are no longer required**. You can leave them unpopulated.
 
 ---
+![Project Starbeam V2](https://github.com/raspiuser1/project-starbeam/blob/main/starbeam_v2/Starbeam.jpg?raw=true)
 
 ## Table of Contents
 
