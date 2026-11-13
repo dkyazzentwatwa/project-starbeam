@@ -1,5 +1,7 @@
 # Project Starbeam V2 – Custom Fork
 
+![Project Starbeam V2](https://github.com/raspiuser1/project-starbeam/blob/main/starbeam_v2/Starbeam.jpg?raw=true)
+
 This repository contains a customized fork of the original [Project Starbeam V2](https://github.com/dkyazzentwatwa/project-starbeam) project.
 
 This fork includes hardware compatibility fixes, improved WiFi connectivity, an automatically starting web server, terminal/CLI functionality, and various stability and user interface improvements.
