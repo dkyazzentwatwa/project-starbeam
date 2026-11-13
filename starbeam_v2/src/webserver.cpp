@@ -2,6 +2,8 @@
 #include "wifi_scanner.h"
 #include "ble_scanner.h"
 #include "wifi_attack.h"
+#include "cc1101.h"
+#include "analyzer.h"
 #include "display.h"
 #include "../config.h"
 
@@ -92,10 +94,21 @@ void StarbeamWebServer::start() {
     server->on("/wifi", handleWiFi);
     server->on("/ble", handleBLE);
     server->on("/api/wifi", handleWiFiJSON);
-    server->on("/api/ble", handleBLEJSON);
-    server->on("/api/scan/control", HTTP_POST, handleScanControl);
-    server->on("/api/scan/status", HTTP_GET, handleStatus);
+    server->on("/api/nrf", HTTP_GET, handleNRFJSON);
+    server->on("/nrf", handleNRF); 
+        // RF signal endpoints
+    server->on("/api/rf/scan", HTTP_GET, handleRFScan);
+    server->on("/api/rf/capture", HTTP_GET, handleRFCapture);
+    server->on("/api/rf/replay", HTTP_GET, handleRFReplay);
+    server->on("/api/rf/info", HTTP_GET, handleRFInfo);
+    server->on("/api/rf/clear", HTTP_GET, handleRFClear);
 
+    server->on("/api/ble", handleBLEJSON);
+    server->on("/api/scan/control", HTTP_GET, handleScanControl);
+    server->on("/api/scan/status", HTTP_GET, handleStatus);
+    server->on("/api/wifi", HTTP_GET, handleWiFiJSON);
+    server->on("/api/wifi/sync", HTTP_GET, handleWiFiSync);   // <-- NIEUW
+    server->on("/api/ble", HTTP_GET, handleBLEJSON);
     // Security testing endpoints
     server->on("/security", handleSecurityRoot);
     server->on("/api/attack/deauth", HTTP_POST, handleStartDeauth);
@@ -151,10 +164,10 @@ void StarbeamWebServer::stop() {
 void StarbeamWebServer::handleClient() {
     if (running) {
         if (dnsServer) {
-            dnsServer->processNextRequest();  // Process DNS queries
+            dnsServer->processNextRequest();
         }
         if (server) {
-            server->handleClient();  // Handle HTTP requests
+            server->handleClient();
         }
     }
 }
@@ -162,6 +175,8 @@ void StarbeamWebServer::handleClient() {
 bool StarbeamWebServer::isRunning() {
     return running;
 }
+// =========================================================
+
 
 String StarbeamWebServer::getIP() {
     // Return STA IP if connected, otherwise AP IP
@@ -316,11 +331,11 @@ void StarbeamWebServer::handleRoot() {
     html += generateNavigation();
 
     // Scan Control Section
-    html += "<h2>Scan Controls</h2>";
-    html += "<div style='margin:20px 0;'>";
-    html += "<button onclick='toggleScan(\"wifi\")' style='padding:10px 20px;margin:5px;background:#333;color:#00ff00;border:1px solid #00ff00;cursor:pointer;'>Toggle WiFi Scan</button>";
-    html += "<button onclick='toggleScan(\"ble\")' style='padding:10px 20px;margin:5px;background:#333;color:#00ff00;border:1px solid #00ff00;cursor:pointer;'>Toggle BLE Scan</button>";
-    html += "</div>";
+    // html += "<h2>Scan Controls</h2>";
+    // html += "<div style='margin:20px 0;'>";
+    // html += "<button onclick='toggleScan(\"wifi\")' style='padding:10px 20px;margin:5px;background:#333;color:#00ff00;border:1px solid #00ff00;cursor:pointer;'>Toggle WiFi Scan</button>";
+    // html += "<button onclick='toggleScan(\"ble\")' style='padding:10px 20px;margin:5px;background:#333;color:#00ff00;border:1px solid #00ff00;cursor:pointer;'>Toggle BLE Scan</button>";
+    // html += "</div>";
 
     // Status table
     html += "<h2>Scanner Status</h2>";
@@ -354,60 +369,62 @@ void StarbeamWebServer::handleRoot() {
 }
 
 void StarbeamWebServer::handleWiFi() {
-    unsigned long startTime = millis();
+    String html = generateHTMLHeader("WiFi Scanner");
+    html += generateNavigation();
+    
+    html += "<h2>WiFi Networks</h2>";
+    html += "<p id='status'>Scanning... please wait (this can take 3 seconds).</p>";
+    html += "<table id='wifiTable' border='1' cellpadding='5' style='display:none;'>";
+    html += "<tr><th>#</th><th>SSID</th><th>BSSID</th><th>RSSI</th><th>Ch</th><th>Security</th></tr>";
+    html += "<tbody id='wifiBody'></tbody></table>";
 
-    server->setContentLength(CONTENT_LENGTH_UNKNOWN);
-    server->send(200, "text/html", "");
+    html += "<script>";
+    html += "function startScan() {";
+    html += "  fetch('/api/wifi?scan=1');";  // Start de scan
+    html += "  pollStatus();";                 // Begin met pollen
+    html += "}";
+    html += "function pollStatus() {";
+    html += "  fetch('/api/wifi')";
+    html += "    .then(r => r.json())";
+    html += "    .then(data => {";
+    html += "      if (data.status === 'scanning') {";
+    html += "        setTimeout(pollStatus, 1000);"; // Wacht 1 sec en check opnieuw
+    html += "      } else if (data.status === 'done') {";
+    html += "        document.getElementById('status').style.display = 'none';";
+    html += "        document.getElementById('wifiTable').style.display = 'table';";
+    html += "        let tbody = document.getElementById('wifiBody');";
+    html += "        tbody.innerHTML = '';";
+    html += "        data.networks.forEach((net, i) => {";
+    html += "          let color = net.rssi > -70 ? '#00ff00' : (net.rssi > -80 ? '#ff6600' : '#ff0000');";
+    html += "          tbody.innerHTML += `<tr><td>${i}</td><td>${net.ssid || '[Hidden]'}</td><td>${net.bssid}</td><td style='color:${color}'>${net.rssi} dBm</td><td>${net.channel}</td><td>${net.security}</td></tr>`;";
+    html += "        });";
+    html += "      } else {";
+    html += "        document.getElementById('status').innerText = 'Scan failed.';";
+    html += "      }";
+    html += "    }).catch(err => {";
+    html += "      document.getElementById('status').innerText = 'Connection lost. Retrying...';";
+    html += "      setTimeout(pollStatus, 2000);";
+    html += "    });";
+    html += "}";
+    html += "startScan();";  // Start automatisch bij laden
+    html += "</script>";
 
-    server->sendContent(generateHTMLHeader("WiFi Scanner"));
-    yield();
-    server->sendContent(generateNavigation());
-    yield();
-
-    String header = "<button onclick='location.reload()'>&#128472; Refresh</button>";
-    header += "<h2>WiFi Networks (" + String(WiFiScanner::getNetworkCount()) + ")</h2>";
-    server->sendContent(header);
-    yield();
-
-    int count = WiFiScanner::getNetworkCount();
-    String chunk = "<table border='1' cellpadding='5'>";
-    chunk += "<tr><th>#</th><th>SSID</th><th>BSSID</th><th>RSSI</th><th>Ch</th><th>Security</th></tr>";
-    server->sendContent(chunk);
-    yield();
-
-    if (count == 0) {
-        server->sendContent("<tr><td colspan='6' style='text-align:center;color:#ff6600;'>No networks found.</td></tr>");
-    } else {
-        for (int i = 0; i < count; i++) {
-            const WiFiNetworkInfo* net = WiFiScanner::getNetwork(i);
-            if (net) {
-                String row = "<tr>";
-                row += "<td>" + String(i) + "</td>";
-                row += "<td>" + (net->ssid.length() > 0 ? net->ssid : "[Hidden]") + "</td>";
-                row += "<td style='font-size:10px;'>" + net->bssid + "</td>";
-
-                String rssiColor = net->rssi > -70 ? "#00ff00" : (net->rssi > -80 ? "#ff6600" : "#ff0000");
-                row += "<td style='color:" + rssiColor + ";'>" + String(net->rssi) + " dBm</td>";
-                row += "<td>" + String(net->channel) + "</td>";
-                row += "<td>" + getSecurityString(net->authMode) + "</td>";
-                row += "</tr>";
-
-                server->sendContent(row);
-                if (i % 3 == 0) yield();
-            }
-        }
-    }
-
-    server->sendContent("</table>");
-    yield();
-    server->sendContent(generateHTMLFooter());
-    server->sendContent("");
-
-    Serial.printf("[WebServer] WiFi page sent in %lu ms\n", millis() - startTime);
+    html += generateHTMLFooter();
+    server->send(200, "text/html", html);
 }
 
 void StarbeamWebServer::handleBLE() {
     unsigned long startTime = millis();
+
+    wifi_mode_t savedMode = WiFi.getMode();
+
+    if (!BLEScanner::isInitialized()) {
+        BLEScanner::init();
+    }
+    BLEScanner::performScan();
+    
+    // Herstel mode (BLE heeft geen mode, maar voor de zekerheid)
+    WiFi.mode(savedMode);
 
     server->setContentLength(CONTENT_LENGTH_UNKNOWN);
     server->send(200, "text/html", "");
@@ -458,31 +475,103 @@ void StarbeamWebServer::handleBLE() {
 
     Serial.printf("[WebServer] BLE page sent in %lu ms\n", millis() - startTime);
 }
-
 void StarbeamWebServer::handleWiFiJSON() {
-    String json = "{\"networks\":[";
+    String json = "{";
 
-    int count = WiFiScanner::getNetworkCount();
-    for (int i = 0; i < count; i++) {
-        const WiFiNetworkInfo* net = WiFiScanner::getNetwork(i);
-        if (net) {
-            if (i > 0) json += ",";
-            json += "{";
-            json += "\"ssid\":\"" + net->ssid + "\",";
-            json += "\"bssid\":\"" + net->bssid + "\",";
-            json += "\"rssi\":" + String(net->rssi) + ",";
-            json += "\"channel\":" + String(net->channel) + ",";
-            json += "\"security\":\"" + getSecurityString(net->authMode) + "\"";
-            json += "}";
-        }
+    // Als er ?scan=1 in de URL staat, START de scan (async)
+    if (server->hasArg("scan") && server->arg("scan") == "1") {
+        // Verwijder oude resultaten om geheugen vrij te maken
+        WiFi.scanDelete();
+        
+        // Start async scan (true = async, false = show_hidden)
+        // De scan draait op de achtergrond, de webserver blijft bereikbaar!
+        WiFi.scanNetworks(true, false);
+        
+        json += "\"status\":\"scanning\"}";
+        server->send(200, "application/json", json);
+        return;
     }
 
-    json += "],\"count\":" + String(count) + "}";
+    // Anders: check of de scan klaar is
+    int n = WiFi.scanComplete();
+    
+    if (n == -1) {
+        // Scan loopt nog
+        json += "\"status\":\"scanning\"}";
+    } 
+    else if (n == -2) {
+        // Scan mislukt
+        json += "\"status\":\"failed\"}";
+    } 
+    else {
+        // Scan klaar! (n >= 0 is het aantal netwerken)
+        json += "\"status\":\"done\",\"count\":" + String(n) + ",\"networks\":[";
+        
+        for (int i = 0; i < n; i++) {
+            if (i > 0) json += ",";
+            json += "{";
+            json += "\"ssid\":\"" + WiFi.SSID(i) + "\",";
+            json += "\"bssid\":\"" + WiFi.BSSIDstr(i) + "\",";
+            json += "\"rssi\":" + String(WiFi.RSSI(i)) + ",";
+            json += "\"channel\":" + String(WiFi.channel(i)) + ",";
+            json += "\"security\":\"" + getSecurityString(WiFi.encryptionType(i)) + "\"";
+            json += "}";
+        }
+        
+        json += "]}";
+        
+        // Ruim de resultaten op (belangrijk voor geheugen!)
+        WiFi.scanDelete();
+    }
 
     server->sendHeader("Access-Control-Allow-Origin", "*");
     server->send(200, "application/json", json);
 }
+void StarbeamWebServer::handleWiFiSync() {
+    // Verwijder oude resultaten om geheugen vrij te maken
+    WiFi.scanDelete();
 
+    // Start async scan op de achtergrond
+    WiFi.scanNetworks(true, false); // true = async, false = show hidden
+
+    // Wacht maximaal 5 seconden tot de scan klaar is
+    unsigned long start = millis();
+    while (WiFi.scanComplete() == -1 && millis() - start < 5000) {
+        delay(100);
+        yield();  // Geef FreeRTOS de tijd voor andere taken (waaronder de AP)
+    }
+
+    int n = WiFi.scanComplete();
+
+    // Scan mislukt of time-out
+    if (n < 0) {
+        String json = "{\"status\":\"error\",\"code\":" + String(n) + "}";
+        server->sendHeader("Access-Control-Allow-Origin", "*");
+        server->send(200, "application/json", json);
+        WiFi.scanDelete();
+        return;
+    }
+
+    // Scan klaar: bouw JSON
+    String json = "{\"status\":\"done\",\"count\":" + String(n) + ",\"networks\":[";
+    for (int i = 0; i < n; i++) {
+        if (i > 0) json += ",";
+        json += "{";
+        json += "\"ssid\":\""     + WiFi.SSID(i)     + "\",";
+        json += "\"bssid\":\""    + WiFi.BSSIDstr(i) + "\",";
+        json += "\"rssi\":"       + String(WiFi.RSSI(i))    + ",";
+        json += "\"channel\":"    + String(WiFi.channel(i)) + ",";
+        json += "\"security\":\"" + getSecurityString(WiFi.encryptionType(i)) + "\"";
+        json += "}";
+    }
+    json += "]}";
+
+    // Ruim de resultaten op
+    WiFi.scanDelete();
+
+    server->sendHeader("Access-Control-Allow-Origin", "*");
+    server->send(200, "application/json", json);
+}
 void StarbeamWebServer::handleBLEJSON() {
     String json = "{\"devices\":[";
 
@@ -861,4 +950,81 @@ void StarbeamWebServer::handlePMKIDClear() {
     Serial.println("[WebServer] Cleared PMKID history");
     server->sendHeader("Location", "/security");
     server->send(302);
+}
+
+void StarbeamWebServer::handleNRF() {
+    String html = generateHTMLHeader("NRF24 Analyzer");
+    html += generateNavigation();
+    
+    html += "<h2>NRF24 2.4GHz Spectrum</h2>";
+    html += "<p>Live raw RF energy scan using the NRF24 module (Ch: <span id='ch'>0</span>)</p>";
+    html += "<div style='width:100%; background:#333; height:30px; margin:20px 0;'>";
+    html += "  <div id='bar' style='width:0%; height:100%; background:#00ff00; transition:width 0.5s;'></div>";
+    html += "</div>";
+    html += "<p>Signal Level: <span id='sig'>0</span> / 10</p>";
+
+    // JavaScript om elke seconde de data op te halen
+    html += "<script>";
+    html += "setInterval(() => {";
+    html += "  fetch('/api/nrf').then(r => r.json()).then(data => {";
+    html += "    document.getElementById('ch').innerText = data.channel;";
+    html += "    document.getElementById('sig').innerText = data.signal;";
+    html += "    let pct = (data.signal / 10) * 100;";
+    html += "    document.getElementById('bar').style.width = pct + '%';";
+    html += "    document.getElementById('bar').style.background = pct > 70 ? '#ff0000' : (pct > 30 ? '#ff6600' : '#00ff00');";
+    html += "  });";
+    html += "}, 1000);"; // Update elke seconde
+    html += "</script>";
+
+    html += generateHTMLFooter();
+    server->send(200, "text/html", html);
+}
+
+void StarbeamWebServer::handleNRFJSON() {
+    String json = "{";
+    json += "\"channel\":" + String(getAnalyzerChannel()) + ",";
+    json += "\"signal\":" + String(getAnalyzerSignal());
+    json += "}";
+    server->sendHeader("Access-Control-Allow-Origin", "*");
+    server->send(200, "application/json", json);
+}
+void StarbeamWebServer::handleRFScan() {
+    float start = server->hasArg("start") ? server->arg("start").toFloat() : 430.0;
+    float end   = server->hasArg("end")   ? server->arg("end").toFloat()   : 450.0;
+    float step  = server->hasArg("step")  ? server->arg("step").toFloat()  : 0.1;
+    
+    String json = CC1101Radio::rfScanJSON(start, end, step);
+    server->sendHeader("Access-Control-Allow-Origin", "*");
+    server->send(200, "application/json", json);
+}
+
+void StarbeamWebServer::handleRFCapture() {
+    float freq = server->hasArg("freq") ? server->arg("freq").toFloat() : 433.92;
+    int dur    = server->hasArg("duration") ? server->arg("duration").toInt() : 1000;
+    
+    if (dur > 5000) dur = 5000;  // Max 5 seconden
+    
+    CC1101Radio::rfCapture(freq, dur);
+    String json = CC1101Radio::rfCaptureInfoJSON();
+    
+    server->sendHeader("Access-Control-Allow-Origin", "*");
+    server->send(200, "application/json", json);
+}
+
+void StarbeamWebServer::handleRFReplay() {
+    CC1101Radio::rfReplay();
+    server->sendHeader("Access-Control-Allow-Origin", "*");
+    server->send(200, "application/json", "{\"status\":\"replayed\"}");
+}
+
+void StarbeamWebServer::handleRFInfo() {
+    String json = CC1101Radio::rfCaptureInfoJSON();
+    server->sendHeader("Access-Control-Allow-Origin", "*");
+    server->send(200, "application/json", json);
+}
+
+void StarbeamWebServer::handleRFClear() {
+    CC1101Radio::rfClearCapture();
+    server->sendHeader("Access-Control-Allow-Origin", "*");
+    server->send(200, "application/json", "{\"status\":\"cleared\"}");
 }

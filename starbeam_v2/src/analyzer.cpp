@@ -303,3 +303,13 @@ void analyzerLoop() {
         lastDisplayUpdate = millis();
     }
 }
+
+int getAnalyzerChannel() {
+    return currentChannel;
+}
+
+int getAnalyzerSignal() {
+    // Pak de meest recente waarde uit de geschiedenis
+    int idx = (historyIndex == 0) ? HISTORY_SIZE - 1 : historyIndex - 1;
+    return signalHistory[idx];
+}

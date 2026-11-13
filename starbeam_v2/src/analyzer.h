@@ -15,5 +15,7 @@
 
 void analyzerSetup();
 void analyzerLoop();
+int getAnalyzerChannel();
+int getAnalyzerSignal();
 
 #endif

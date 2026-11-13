@@ -22,6 +22,8 @@ private:
     static void handleRoot();
     static void handleWiFi();
     static void handleBLE();
+    static void handleNRF();
+    static void handleNRFJSON();
     static void handleWiFiJSON();
     static void handleBLEJSON();
     static void handleNotFound();
@@ -37,7 +39,12 @@ private:
     static void handlePMKIDList();      // GET endpoint for PMKID history JSON
     static void handlePMKIDDownload();  // GET endpoint to download PMKIDs (hashcat format)
     static void handlePMKIDClear();     // POST endpoint to clear PMKID history
-
+    static void handleWiFiSync();
+    static void handleRFScan();
+    static void handleRFCapture();
+    static void handleRFReplay();
+    static void handleRFInfo();
+    static void handleRFClear();    
     // HTML generation helpers
     static String generateHTMLHeader(const char* title);
     static String generateHTMLFooter();
