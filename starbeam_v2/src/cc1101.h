@@ -61,10 +61,10 @@ public:
         unsigned long duration_ms;
         bool valid;
     };
-    
+    static RFCapture lastCapture;
 
 private:
-    static RFCapture lastCapture;
+    
     static ELECHOUSE_CC1101 CC1;
     static ELECHOUSE_CC1101_2 CC2;
     static bool jammingMode;
