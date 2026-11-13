@@ -6,6 +6,26 @@
 
 #include <Arduino.h>
 
+
+// In config.h
+// ============================================================================
+// WiFi Station (STA) Configuration
+// ============================================================================
+#define MAX_STA_NETWORKS 2
+#define DEFAULT_WIFI_STA_ENABLED true  // Default to ON
+#define DEFAULT_AP_ENABLED false       // Default AP to OFF
+
+static const char* const STA_SSIDS[MAX_STA_NETWORKS] = {
+    "wifi1",
+    "wifi2"
+};
+
+static const char* const STA_PASSWORDS[MAX_STA_NETWORKS] = {
+    "wifi1_pass",
+    "wifi2_pass"
+};
+
+
 // ============================================================================
 // NRF24L01 Radio Pin Definitions
 // ============================================================================
@@ -22,14 +42,21 @@
 #define NRF24_3_CE  25
 #define NRF24_3_CS  5
 
-// NRF24 Radio 4 (HSPI) - Can also be CC1101 #1
-#define NRF24_4_CE  4
-#define NRF24_4_CS  2
+// // NRF24 Radio 4 (HSPI) - Can also be CC1101 #1
+// #define NRF24_4_CE  4
+// #define NRF24_4_CS  2
 
-// NRF24 Radio 5 (HSPI) - Can also be CC1101 #2
-#define NRF24_5_CE  32
-#define NRF24_5_CS  17
+// // NRF24 Radio 5 (HSPI) - Can also be CC1101 #2
+// #define NRF24_5_CE  32
+// #define NRF24_5_CS  17
 
+// NRF24 Radio 4 (HSPI) - 
+#define NRF24_4_CE  -1
+#define NRF24_4_CS  -1
+
+// NRF24 Radio 5 (HSPI) - 
+#define NRF24_5_CE  -1
+#define NRF24_5_CS  -1
 // ============================================================================
 // CC1101 Radio Pin Definitions
 // ============================================================================
@@ -77,7 +104,8 @@
 #define OLED_I2C_ADDR 0x3C
 
 // LED
-#define LED_PIN 16
+#define LED_PIN -1
+//#define LED_PIN 16
 
 // Buttons
 #define BUTTON_UP     39
@@ -136,7 +164,7 @@
 // ============================================================================
 
 #define RF24_SPI_SPEED  16000000  // 16 MHz SPI speed for NRF24
-#define RADIO_COUNT_NRF24  5      // Total NRF24 radios
+#define RADIO_COUNT_NRF24  3      // Total NRF24 radios
 #define RADIO_COUNT_CC1101 2      // Total CC1101 radios
 
 // ============================================================================

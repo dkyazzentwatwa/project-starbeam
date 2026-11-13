@@ -46,7 +46,25 @@ public:
     static ELECHOUSE_CC1101& getCC1() { return CC1; }
     static ELECHOUSE_CC1101_2& getCC2() { return CC2; }
 
+    // RF Signal API (for web interface)
+    static String rfScanJSON(float startFreq, float endFreq, float step);
+    static void rfCapture(float freq, int durationMs);
+    static void rfReplay();
+    static String rfCaptureInfoJSON();
+    static void rfClearCapture();
+    
+    struct RFCapture {
+        unsigned long timings[512];   // microseconds tussen edges
+        uint8_t levels[512];          // signaalniveau per edge
+        int count;
+        float freq;
+        unsigned long duration_ms;
+        bool valid;
+    };
+    
+
 private:
+    static RFCapture lastCapture;
     static ELECHOUSE_CC1101 CC1;
     static ELECHOUSE_CC1101_2 CC2;
     static bool jammingMode;

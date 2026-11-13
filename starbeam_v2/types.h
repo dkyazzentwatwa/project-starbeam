@@ -77,6 +77,7 @@ enum MenuItem {
   TEST_NRF,
   TEST_CC1101,
   TEST_HSPI,
+  WIFI_STA_MODE,  
   CC1_SINGLE,
   CC2_SINGLE,
   REC_RAW,

@@ -42,6 +42,7 @@ const char* Display::menuLabels[NUM_MENU_ITEMS] = {
     "NRF Test",
     "CC1101 Test",
     "Test HSPI",
+    "WiFi Mode",  
     "CC Single",
     "CC2 Single",
     "Rec Raw",
